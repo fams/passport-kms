@@ -12,7 +12,7 @@ import (
 	"github.com/lestrrat-go/jwx/v2/jwe"
 	//"github.com/lestrrat-go/jwx/v2/jwk"
 
-	"ige/internal/securejwt/jwekey"
+	"passport/securejwt/jwekey"
 )
 
 type Encryptor struct{}
