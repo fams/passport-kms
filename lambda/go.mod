@@ -1,15 +1,21 @@
-module ige
+module lambda-ca-kms
 
-go 1.23.0
+go 1.23
 
-toolchain go1.23.3
+//
+//require (
+//    github.com/aws/aws-lambda-go v1.43.0
+//    github.com/aws/aws-sdk-go-v2/config v1.33.0
+//    github.com/aws/aws-sdk-go-v2/service/kms v1.38.3
+//    github.com/golang-jwt/jwt/v5 v5.1.0
+//    github.com/matelang/jwt-go-aws-kms/v2 v2.1.3
+//)
 
 require (
+	github.com/aws/aws-lambda-go v1.48.0
 	github.com/aws/aws-sdk-go-v2/config v1.29.14
 	github.com/aws/aws-sdk-go-v2/service/kms v1.38.3
 	github.com/golang-jwt/jwt/v5 v5.2.2
-	github.com/lestrrat-go/jwx v1.2.31
-	github.com/lestrrat-go/jwx/v2 v2.1.6
 	github.com/matelang/jwt-go-aws-kms/v2 v2.0.0-20250429062419-9fdd079de814
 )
 
@@ -26,16 +32,4 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.19 // indirect
 	github.com/aws/smithy-go v1.22.2 // indirect
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
-	github.com/goccy/go-json v0.10.3 // indirect
-	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect
-	github.com/lestrrat-go/blackmagic v1.0.3 // indirect
-	github.com/lestrrat-go/httpcc v1.0.1 // indirect
-	github.com/lestrrat-go/httprc v1.0.6 // indirect
-	github.com/lestrrat-go/iter v1.0.2 // indirect
-	github.com/lestrrat-go/option v1.0.1 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
-	github.com/segmentio/asm v1.2.0 // indirect
-	golang.org/x/crypto v0.32.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
 )

@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"ige/internal/securejwt"
 	"log"
+	"passport/securejwt"
 	"time"
 )
 
