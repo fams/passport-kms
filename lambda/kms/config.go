@@ -20,13 +20,29 @@ var (
 )
 
 type KeyWrapper struct {
-	config     *jwtkms.Config
-	keyID      string
-	SignMethod *jwtkms.KMSSigningMethod
+	config *jwtkms.Config
+	keyID  string
+	PubKey *kms.GetPublicKeyOutput
 }
 
 func (k *KeyWrapper) WithContext(ctx context.Context) *jwtkms.Config {
 	return k.config.WithContext(ctx)
+}
+func (k *KeyWrapper) SigningMethod() *jwtkms.KMSSigningMethod {
+	var signMethod *jwtkms.KMSSigningMethod
+	switch k.PubKey.KeySpec {
+	case types.KeySpecRsa2048, types.KeySpecRsa3072, types.KeySpecRsa4096:
+		signMethod = jwtkms.SigningMethodPS256
+	case types.KeySpecEccNistP256, types.KeySpecEccNistP384, types.KeySpecEccNistP521, types.KeySpecEccSecgP256k1:
+		signMethod = jwtkms.SigningMethodECDSA256
+	default:
+		signMethod = nil
+	}
+	return signMethod
+}
+
+func (k *KeyWrapper) Kid() string {
+	return *k.PubKey.KeyId
 }
 
 func newKeyWrapper(client *kms.Client, keyId string) (*KeyWrapper, error) {
@@ -37,16 +53,8 @@ func newKeyWrapper(client *kms.Client, keyId string) (*KeyWrapper, error) {
 	if err != nil {
 		return nil, err
 	}
-	var signMethod *jwtkms.KMSSigningMethod
-	switch pubKey.KeySpec {
-	case types.KeySpecRsa2048, types.KeySpecRsa3072, types.KeySpecRsa4096:
-		signMethod = jwtkms.SigningMethodPS256
-	case types.KeySpecEccNistP256, types.KeySpecEccNistP384, types.KeySpecEccNistP521, types.KeySpecEccSecgP256k1:
-		signMethod = jwtkms.SigningMethodECDSA256
-	default:
-		signMethod = nil
-	}
-	return &KeyWrapper{config: jwtkms.NewKMSConfig(client, keyId, false), keyID: keyId, SignMethod: signMethod}, nil
+
+	return &KeyWrapper{config: jwtkms.NewKMSConfig(client, keyId, false), keyID: keyId, PubKey: pubKey}, nil
 }
 
 func InitKMS() {

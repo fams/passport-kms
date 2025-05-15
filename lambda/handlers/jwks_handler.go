@@ -2,14 +2,17 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-
+	"crypto/ecdsa"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"math/big"
+	"net/http"
+	"time"
+
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-sdk-go-v2/config"
-	awskms "github.com/aws/aws-sdk-go-v2/service/kms"
+	"github.com/golang-jwt/jwt/v5"
 	"lambda-ca-kms/kms"
 )
 
@@ -20,6 +23,9 @@ type JWK struct {
 	Alg string   `json:"alg"`
 	N   string   `json:"n,omitempty"`
 	E   string   `json:"e,omitempty"`
+	Crv string   `json:"crv,omitempty"`
+	X   string   `json:"x,omitempty"`
+	Y   string   `json:"y,omitempty"`
 	X5c []string `json:"x5c,omitempty"`
 }
 
@@ -27,50 +33,97 @@ type JWKS struct {
 	Keys []JWK `json:"keys"`
 }
 
+func base64urlUInt(b *big.Int) string {
+	return base64.RawURLEncoding.EncodeToString(b.Bytes())
+}
+
+func base64urlInt(i int) string {
+	buf := big.NewInt(int64(i)).Bytes()
+	return base64.RawURLEncoding.EncodeToString(buf)
+}
+
 func HandleGetJWKS(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError, Body: "erro ao carregar configuração"}, nil
-	}
-
-	client := awskms.NewFromConfig(cfg)
-
 	var keys []JWK
 
 	for _, pair := range []struct {
-		kid string
+		key *kms.KeyWrapper
 		use string
-		alg string
 	}{
-		{kms.JWTKeyID, "sig", "ES256"},
-		{kms.JOSEKeyID, "enc", "ES256"},
+		{kms.JWTSigner, "sig"},
+		{kms.JOSESigner, "enc"},
 	} {
-		out, err := client.GetPublicKey(ctx, &awskms.GetPublicKeyInput{
-			KeyId: &pair.kid,
-		})
+		pub, err := x509.ParsePKIXPublicKey(pair.key.PubKey.PublicKey)
 		if err != nil {
-			return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError, Body: "erro ao obter chave pública"}, nil
+			return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError, Body: "erro ao decodificar chave pública"}, nil
 		}
 
-		pemBlock := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: out.PublicKey})
-		keys = append(keys, JWK{
-			Kty: "EC",
-			Kid: pair.kid,
-			Use: pair.use,
-			Alg: pair.alg,
-			X5c: []string{base64.StdEncoding.EncodeToString(pemBlock)},
-		})
+		pemBlock := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pair.key.PubKey.PublicKey})
+		cert := base64.StdEncoding.EncodeToString(pemBlock)
+
+		switch pub := pub.(type) {
+		case *rsa.PublicKey:
+			keys = append(keys, JWK{
+				Kty: "RSA",
+				Kid: pair.key.Kid(),
+				Use: pair.use,
+				Alg: "RS256",
+				N:   base64urlUInt(pub.N),
+				E:   base64urlInt(pub.E),
+				X5c: []string{cert},
+			})
+		case *ecdsa.PublicKey:
+			curve := pub.Curve.Params().Name
+			alg := "ES256"
+			if curve == "P-384" {
+				alg = "ES384"
+			} else if curve == "P-521" {
+				alg = "ES512"
+			}
+
+			keys = append(keys, JWK{
+				Kty: "EC",
+				Kid: pair.key.Kid(),
+				Use: pair.use,
+				Alg: alg,
+				Crv: curve,
+				X:   base64.RawURLEncoding.EncodeToString(pub.X.Bytes()),
+				Y:   base64.RawURLEncoding.EncodeToString(pub.Y.Bytes()),
+				X5c: []string{cert},
+			})
+		default:
+			return events.APIGatewayProxyResponse{StatusCode: http.StatusBadRequest, Body: "chave pública com tipo não suportado"}, nil
+		}
 	}
 
 	jwks := JWKS{Keys: keys}
-	body, err := json.MarshalIndent(jwks, "", "  ")
+
+	now := time.Now()
+	claims := jwt.RegisteredClaims{
+		Issuer:    "jwks.ca.internal",
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(6 * time.Hour)),
+	}
+
+	type JWKSClaims struct {
+		jwt.RegisteredClaims
+		JWKS JWKS `json:"jwks"`
+	}
+
+	customClaims := JWKSClaims{
+		RegisteredClaims: claims,
+		JWKS:             jwks,
+	}
+
+	token := jwt.NewWithClaims(kms.JWKSSigner.SigningMethod(), customClaims)
+
+	signedJWT, err := token.SignedString(kms.JWKSSigner.WithContext(ctx))
 	if err != nil {
-		return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError, Body: "erro ao serializar JWKS"}, nil
+		return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError, Body: "erro ao assinar JWKS"}, nil
 	}
 
 	return events.APIGatewayProxyResponse{
 		StatusCode: http.StatusOK,
-		Headers:    map[string]string{"Content-Type": "application/json"},
-		Body:       string(body),
+		Headers:    map[string]string{"Content-Type": "application/jwt"},
+		Body:       signedJWT,
 	}, nil
 }

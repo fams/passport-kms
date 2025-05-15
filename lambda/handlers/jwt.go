@@ -21,7 +21,7 @@ func HandleSignJWT(ctx context.Context, req events.APIGatewayProxyRequest) (even
 		NotBefore: jwt.NewNumericDate(now),
 		Subject:   "usuario@exemplo.com",
 	}
-	token := jwt.NewWithClaims(kms.JWTSigner.SignMethod, claims)
+	token := jwt.NewWithClaims(kms.JWTSigner.SigningMethod(), claims)
 	signed, err := token.SignedString(kms.JWTSigner.WithContext(ctx))
 	if err != nil {
 		return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError, Body: "erro ao assinar jwt"}, nil
