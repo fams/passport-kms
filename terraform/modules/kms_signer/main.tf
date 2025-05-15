@@ -34,22 +34,22 @@ resource "aws_iam_role" "jwt_signing_role" {
 }
 
 
-resource "aws_iam_role_policy" "jwt_signing_policy" {
-  count = var.sign_role_arn == "" ? 1 : 0
-  name ="kms-signing-policy-${var.key_alias}"
-  role = aws_iam_role.jwt_signing_role[0].id
-
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Effect = "Allow",
-        Action = [
-          "kms:Sign",
-          "kms:GetPublicKey"
-        ],
-        Resource = "*"
-      }
-    ]
-  })
-}
+# resource "aws_iam_role_policy" "jwt_signing_policy" {
+#   count = var.sign_role_arn == "" ? 1 : 0
+#   name ="kms-signing-policy-${var.key_alias}"
+#   role = aws_iam_role.jwt_signing_role[0].id
+#
+#   policy = jsonencode({
+#     Version = "2012-10-17",
+#     Statement = [
+#       {
+#         Effect = "Allow",
+#         Action = [
+#           "kms:Sign",
+#           "kms:GetPublicKey"
+#         ],
+#         Resource = "*"
+#       }
+#     ]
+#   })
+# }
