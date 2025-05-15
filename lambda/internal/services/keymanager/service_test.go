@@ -12,24 +12,24 @@ func TestGetSignerAtAndVisible(t *testing.T) {
 		{keyID: "k2", UseFrom: mustParse(t, "2024-01-01T00:00:00Z"), ExpiresAt: mustParse(t, "2025-01-01T00:00:00Z")},
 		{keyID: "k3", UseFrom: mustParse(t, "2025-01-01T00:00:00Z"), ExpiresAt: mustParse(t, "2026-01-01T00:00:00Z")},
 	}
-	t.Run("getSignerAt", func(t *testing.T) {
-		active := getSignerAt(entries, now)
+	t.Run("GetSignerAt", func(t *testing.T) {
+		active := GetSignerAt(entries, now)
 		if active == nil || active.keyID != "k2" {
 			t.Errorf("esperado k2, obtido %v", active.keyID)
 		}
 	})
-	t.Run("getVisibleAt", func(t *testing.T) {
-		visible := getVisibleAt(entries, now)
+	t.Run("GetVisibleAt", func(t *testing.T) {
+		visible := GetVisibleAt(entries, now)
 		if len(visible) != 2 || visible[0].keyID != "k2" || visible[1].keyID != "k3" {
 			t.Errorf("esperado visíveis [k2 k3], obtido %v", visible)
 		}
 	})
 	t.Run("Nenhuma ativa ou visível", func(t *testing.T) {
 		past := mustParse(t, "2010-01-01T00:00:00Z")
-		if getSignerAt(entries, past) != nil {
-			t.Error("esperado nil em getSignerAt com tempo anterior")
+		if GetSignerAt(entries, past) != nil {
+			t.Error("esperado nil em GetSignerAt com tempo anterior")
 		}
-		if len(getVisibleAt(entries, past)) != 3 {
+		if len(GetVisibleAt(entries, past)) != 3 {
 			t.Error("esperado todas visíveis se expiradas no futuro")
 		}
 	})
@@ -42,7 +42,7 @@ func TestApplyExpirationPolicy(t *testing.T) {
 			{KeyID: "k2", UseFrom: mustParse(t, "2025-01-01T00:00:00Z")},
 			{KeyID: "k3", UseFrom: mustParse(t, "2026-01-01T00:00:00Z")},
 		}
-		updated := applyExpirationPolicy(entries, 180)
+		updated := ApplyExpirationPolicy(entries, 180)
 		expects := []string{"2025-06-30T00:00:00Z", "2026-06-30T00:00:00Z", "2036-01-01T00:00:00Z"}
 		for i, exp := range expects {
 			if !updated[i].ExpiresAt.Equal(mustParse(t, exp)) {
@@ -53,7 +53,7 @@ func TestApplyExpirationPolicy(t *testing.T) {
 
 	t.Run("Lista vazia não altera nada", func(t *testing.T) {
 		entries := []KeyEntry{}
-		res := applyExpirationPolicy(entries, 90)
+		res := ApplyExpirationPolicy(entries, 90)
 		if len(res) != 0 {
 			t.Errorf("esperado lista vazia, obtido %d entradas", len(res))
 		}

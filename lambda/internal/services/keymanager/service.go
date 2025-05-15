@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/matelang/jwt-go-aws-kms/v2/jwtkms"
+
 	"lambda-ca-kms/internal/entities/services"
 	"time"
 )
@@ -12,7 +13,7 @@ import (
 type keyManager struct {
 	jwtKeys           []*KeyHolder
 	joseKeys          []*KeyHolder
-	jwtkKeys          []*KeyHolder
+	jwksKeys          []*KeyHolder
 	issuer            string
 	expireInHours     int
 	skewTimeInSeconds int
@@ -21,52 +22,49 @@ type keyManager struct {
 var _ services.KeyManager = (*keyManager)(nil)
 
 func (k *keyManager) JWKSCurrent(ctx context.Context) (string, error) {
-	entries := make([]JWKSEntry, len(k.jwtkKeys)+1)
-	entries[0] = JWKSEntry{getSignerAt(k.joseKeys, time.Now()), "enc"}
-	for i := range getVisibleAt(k.jwtKeys, time.Now()) {
-		entries[i+1] = JWKSEntry{getSignerAt(k.jwtKeys, time.Now()), "sig"}
+	entries := make([]*JWKSEntry, len(k.jwksKeys)+1)
+	entries[0] = &JWKSEntry{GetSignerAt(k.joseKeys, time.Now()), "enc"}
+	for i := range GetVisibleAt(k.jwtKeys, time.Now()) {
+		entries[i+1] = &JWKSEntry{GetSignerAt(k.jwtKeys, time.Now()), "sig"}
 	}
 
-	return buildJWKS(ctx, entries, JWKSConfig{
+	return BuildJWKS(ctx, entries, &JWKSConfig{
 		issuer:            k.issuer,
 		expireInHours:     k.expireInHours,
 		skewTimeInSeconds: k.skewTimeInSeconds,
-	})
+	}, GetSignerAt(k.jwksKeys, time.Now()))
 
 }
 
 func (k *keyManager) JWKSPublicKey(ctx context.Context) ([]byte, error) {
-	out := getSignerAt(k.jwtkKeys, time.Now()).PubKey
+	out := GetSignerAt(k.jwksKeys, time.Now()).PubKey
 	pemBlock := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: out.PublicKey})
 	return pemBlock, nil
 }
 
-type issConfig struct {
-}
-
 func (k *keyManager) IssuerConfig(ctx context.Context) ([]byte, error) {
 	return buildIssuerConfig(
-		getVisibleAt(k.jwtKeys, time.Now()),
-		getSignerAt(k.jwtkKeys, time.Now()))
+		GetVisibleAt(k.jwtKeys, time.Now()),
+		GetSignerAt(k.jwksKeys, time.Now()))
 }
 
 func NewKeyManager(ctx context.Context, kmsClient *kms.Client, cfg *Config) (*keyManager, error) {
-	jwtKeyGroup, err := fillKeyGroup(ctx, kmsClient, applyExpirationPolicy(cfg.Keys["jwt"], cfg.ExpiresPolicy.OverlapDays))
+	jwtKeyGroup, err := fillKeyGroup(ctx, kmsClient, ApplyExpirationPolicy(cfg.Keys["jwt"], cfg.ExpiresPolicy.OverlapDays))
 	if err != nil {
 		return nil, err
 	}
-	joseKeyGroup, err := fillKeyGroup(ctx, kmsClient, applyExpirationPolicy(cfg.Keys["jose"], cfg.ExpiresPolicy.OverlapDays))
+	joseKeyGroup, err := fillKeyGroup(ctx, kmsClient, ApplyExpirationPolicy(cfg.Keys["jose"], cfg.ExpiresPolicy.OverlapDays))
 	if err != nil {
 		return nil, err
 	}
-	jwksKeyGroup, err := fillKeyGroup(ctx, kmsClient, applyExpirationPolicy(cfg.Keys["jwks"], cfg.ExpiresPolicy.OverlapDays))
+	jwksKeyGroup, err := fillKeyGroup(ctx, kmsClient, ApplyExpirationPolicy(cfg.Keys["jwks"], cfg.ExpiresPolicy.OverlapDays))
 	if err != nil {
 		return nil, err
 	}
 	km := &keyManager{
 		jwtKeys:  jwtKeyGroup,
 		joseKeys: joseKeyGroup,
-		jwtkKeys: jwksKeyGroup,
+		jwksKeys: jwksKeyGroup,
 	}
 	return km, nil
 }
@@ -77,8 +75,9 @@ func fillKeyGroup(ctx context.Context, client jwtkms.KMSClient, entries []KeyEnt
 		pubKey, err := client.GetPublicKey(ctx, &kms.GetPublicKeyInput{
 			KeyId: &entry.KeyID,
 		})
-		must(err)
-
+		if err != nil {
+			return nil, err
+		}
 		cfg := jwtkms.NewKMSConfig(client, entry.KeyID, false)
 
 		kw := NewKeyHolder(pubKey, cfg, entry)
@@ -88,7 +87,7 @@ func fillKeyGroup(ctx context.Context, client jwtkms.KMSClient, entries []KeyEnt
 }
 
 // Recupera a chave ativa no momento
-func getSignerAt(keys []*KeyHolder, now time.Time) *KeyHolder {
+func GetSignerAt(keys []*KeyHolder, now time.Time) *KeyHolder {
 	var active *KeyHolder
 	for _, k := range keys {
 		if (k.UseFrom.Before(now) || k.UseFrom.Equal(now)) &&
@@ -100,7 +99,7 @@ func getSignerAt(keys []*KeyHolder, now time.Time) *KeyHolder {
 }
 
 // Recupera todas as chaves ainda válidas
-func getVisibleAt(keys []*KeyHolder, now time.Time) []*KeyHolder {
+func GetVisibleAt(keys []*KeyHolder, now time.Time) []*KeyHolder {
 	var visible []*KeyHolder
 	for _, k := range keys {
 		if k.ExpiresAt.After(now) {
@@ -110,7 +109,7 @@ func getVisibleAt(keys []*KeyHolder, now time.Time) []*KeyHolder {
 	return visible
 }
 
-func applyExpirationPolicy(entries []KeyEntry, overlapDays int) []KeyEntry {
+func ApplyExpirationPolicy(entries []KeyEntry, overlapDays int) []KeyEntry {
 	if len(entries) == 0 {
 		return entries
 	}
@@ -120,4 +119,20 @@ func applyExpirationPolicy(entries []KeyEntry, overlapDays int) []KeyEntry {
 	}
 	entries[len(entries)-1].ExpiresAt = entries[len(entries)-1].UseFrom.AddDate(10, 0, 0) // default: 10 anos
 	return entries
+}
+
+// Representa uma entrada de chave no YAML
+type KeyEntry struct {
+	KeyID     string    `yaml:"key_id"`
+	UseFrom   time.Time `yaml:"use_from"`
+	ExpiresAt time.Time `yaml:"-"` // calculado automaticamente
+}
+
+// Configuração do YAML
+type Config struct {
+	Issuer        string                `yaml:"issuer"`
+	Keys          map[string][]KeyEntry `yaml:"keys"`
+	ExpiresPolicy struct {
+		OverlapDays int `yaml:"overlap_days"`
+	} `yaml:"expires_policy"`
 }

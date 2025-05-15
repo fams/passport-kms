@@ -1,7 +1,8 @@
-package keymanager
+package handlers
 
 import (
 	"context"
+	"lambda-ca-kms/internal/services/keymanager"
 	"lambda-ca-kms/mocks"
 	"os"
 	"testing"
@@ -49,14 +50,14 @@ func TestLoadKeyGroup_ErrorPath(t *testing.T) {
 	mock := mocks.NewMockKMSClient(ctrl)
 	mock.EXPECT().GetPublicKey(gomock.Any(), gomock.Any()).Return(nil, assertError("falha simulada"))
 
-	target := []*KeyHolder{}
+	target := []*keymanager.KeyHolder{}
 	defer func() {
 		if r := recover(); r == nil {
 			t.Error("esperado panic por erro de GetPublicKey")
 		}
 	}()
 
-	loadKeyGroup(context.Background(), mock, []KeyEntry{{KeyID: "fail", UseFrom: time.Now()}}, &target)
+	loadKeyGroup(context.Background(), mock, []keymanager.KeyEntry{{KeyID: "fail", UseFrom: time.Now()}}, &target)
 }
 
 func assertError(msg string) error {
