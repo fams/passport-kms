@@ -7,20 +7,28 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/asn1"
-
+	"encoding/base64"
+	"encoding/json"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/matelang/jwt-go-aws-kms/v2/jwtkms"
 	"go.uber.org/mock/gomock"
 	"lambda-ca-kms/handlers"
 	"lambda-ca-kms/keymanager"
 	"lambda-ca-kms/mocks"
 )
+
+type JWKSClaims struct {
+	Iss  string      `json:"iss"`
+	JWKS interface{} `json:"jwks"`
+}
 
 func generateFakeECDSAKey(t *testing.T) ([]byte, *ecdsa.PrivateKey) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -38,15 +46,23 @@ func TestHandleGetJWKS_Table(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	realKeyDER, realPriv := generateFakeECDSAKey(t)
+
 	mockKMS := mocks.NewMockKMSClient(ctrl)
 	mockKMS.EXPECT().Sign(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
 		func(ctx context.Context, input *kms.SignInput, optFns ...func(*kms.Options)) (*kms.SignOutput, error) {
-			r := struct{ R, S *big.Int }{big.NewInt(1), big.NewInt(1)}
-			sig, _ := asn1.Marshal(r)
+			r, s, err := ecdsa.Sign(rand.Reader, realPriv, input.Message)
+			if err != nil {
+				return nil, err
+			}
+			sig, err := asn1.Marshal(struct{ R, S *big.Int }{r, s})
+			if err != nil {
+				return nil, err
+			}
 			return &kms.SignOutput{Signature: sig}, nil
 		})
 
-	pubDER, _ := generateFakeECDSAKey(t)
+	pubKey := &realPriv.PublicKey
 
 	tests := []struct {
 		name    string
@@ -55,7 +71,7 @@ func TestHandleGetJWKS_Table(t *testing.T) {
 		expect  int
 		useMock bool
 	}{
-		{"success", pubDER, types.KeySpecEccNistP256, 200, true},
+		{"success", realKeyDER, types.KeySpecEccNistP256, 200, true},
 		{"invalid key data", []byte("invalid"), types.KeySpecEccNistP256, 500, false},
 		{"unsupported key type", func() []byte {
 			type unsupportedKey struct{}
@@ -88,17 +104,37 @@ func TestHandleGetJWKS_Table(t *testing.T) {
 			kw := keymanager.NewKeyWrapper(pub, cfg, entry)
 			keymanager.JWTKeys = []*keymanager.KeyWrapper{kw}
 			keymanager.JOSEKeys = []*keymanager.KeyWrapper{kw}
+			keymanager.JWKSKeys = []*keymanager.KeyWrapper{kw}
 
 			resp, _ := handlers.HandleGetJWKS(context.Background(), events.APIGatewayProxyRequest{})
 			if resp.StatusCode != tt.expect {
 				t.Errorf("esperado status %d, obtido %d", tt.expect, resp.StatusCode)
 			}
+
 			if tt.expect == 200 {
-				if resp.Headers["Content-Type"] != "application/jwt" {
-					t.Errorf("esperado Content-Type application/jwt, obtido %s", resp.Headers["Content-Type"])
+				parsed, err := jwt.Parse(resp.Body, func(token *jwt.Token) (interface{}, error) {
+					if token.Method.Alg() != jwt.SigningMethodES256.Alg() {
+						t.Fatalf("método de assinatura inesperado: %v", token.Method.Alg())
+					}
+					return pubKey, nil
+				})
+				if err != nil || !parsed.Valid {
+					t.Fatalf("JWT inválido: %v", err)
 				}
-				if resp.Body == "" {
-					t.Error("esperado corpo com JWT assinado, obtido vazio")
+
+				payload, err := base64.RawURLEncoding.DecodeString(strings.Split(resp.Body, ".")[1])
+				if err != nil {
+					t.Fatalf("erro ao decodificar payload: %v", err)
+				}
+				var out JWKSClaims
+				if err := json.Unmarshal(payload, &out); err != nil {
+					t.Fatalf("payload inválido: %v", err)
+				}
+				if out.Iss != "jwks.ca.internal" {
+					t.Errorf("issuer inesperado: %s", out.Iss)
+				}
+				if out.JWKS == nil {
+					t.Error("jwks não encontrado no payload")
 				}
 			}
 		})

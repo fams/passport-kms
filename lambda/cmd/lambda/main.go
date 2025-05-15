@@ -7,13 +7,9 @@ import (
 	"lambda-ca-kms/handlers"
 	"lambda-ca-kms/keymanager"
 	"net/http"
-	"os"
 )
 
 func init() {
-	*keymanager.JWTKeyID = os.Getenv("KMS_KEY_JWT")
-	*keymanager.JOSEKeyID = os.Getenv("KMS_KEY_JOSE")
-	*keymanager.JWKSKeyID = os.Getenv("KMS_KEY_JWKS")
 	keymanager.InitKMS()
 }
 func main() {
