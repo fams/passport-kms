@@ -6,7 +6,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"io"
 	"lambda-ca-kms/handlers"
-	"lambda-ca-kms/keymanager"
+	"lambda-ca-kms/internal/services/keymanager"
 	"log"
 	"net/http"
 )
