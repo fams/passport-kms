@@ -1,4 +1,4 @@
-package handlers_test
+package keymanager
 
 import (
 	"context"
@@ -9,19 +9,17 @@ import (
 	"encoding/asn1"
 	"encoding/base64"
 	"encoding/json"
-	"lambda-ca-kms/internal/services/keymanager"
+	"github.com/stretchr/testify/assert"
 	"math/big"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/matelang/jwt-go-aws-kms/v2/jwtkms"
 	"go.uber.org/mock/gomock"
-	"lambda-ca-kms/handlers"
 	"lambda-ca-kms/mocks"
 )
 
@@ -68,21 +66,21 @@ func TestHandleGetJWKS_Table(t *testing.T) {
 		name    string
 		keyData []byte
 		spec    types.KeySpec
-		expect  int
+		expect  error
 		useMock bool
 	}{
-		{"success", realKeyDER, types.KeySpecEccNistP256, 200, true},
-		{"invalid key data", []byte("invalid"), types.KeySpecEccNistP256, 500, false},
+		{"success", realKeyDER, types.KeySpecEccNistP256, nil, true},
+		{"invalid key data", []byte("invalid"), types.KeySpecEccNistP256, ErrInvalidKey, false},
 		{"unsupported key type", func() []byte {
 			type unsupportedKey struct{}
 			b, _ := x509.MarshalPKIXPublicKey(&unsupportedKey{})
 			return b
-		}(), types.KeySpecEccNistP256, 500, false},
+		}(), types.KeySpecEccNistP256, ErrInvalidKey, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			entry := keymanager.KeyEntry{
+			entry := KeyEntry{
 				KeyID:     tt.name,
 				UseFrom:   time.Now().Add(-1 * time.Hour),
 				ExpiresAt: time.Now().Add(6 * time.Hour),
@@ -101,18 +99,16 @@ func TestHandleGetJWKS_Table(t *testing.T) {
 				cfg = jwtkms.NewKMSConfig(nil, entry.KeyID, false)
 			}
 
-			kw := keymanager.NewKeyHolder(pub, cfg, entry)
-			keymanager.JWTKeys = []*keymanager.KeyHolder{kw}
-			keymanager.JOSEKeys = []*keymanager.KeyHolder{kw}
-			keymanager.JWKSKeys = []*keymanager.KeyHolder{kw}
+			kw := NewKeyHolder(pub, cfg, entry)
+			JWTKeys = []*KeyHolder{kw}
+			JOSEKeys = []*KeyHolder{kw}
+			JWKSKeys = []*KeyHolder{kw}
 
-			resp, _ := handlers.HandleGetJWKS(context.Background(), events.APIGatewayProxyRequest{})
-			if resp.StatusCode != tt.expect {
-				t.Errorf("esperado status %d, obtido %d", tt.expect, resp.StatusCode)
-			}
+			jwks, err := GetJWKS(context.Background())
+			assert.ErrorIs(t, err, tt.expect)
 
-			if tt.expect == 200 {
-				parsed, err := jwt.Parse(resp.Body, func(token *jwt.Token) (interface{}, error) {
+			if err == nil {
+				parsed, err := jwt.Parse(jwks, func(token *jwt.Token) (interface{}, error) {
 					if token.Method.Alg() != jwt.SigningMethodES256.Alg() {
 						t.Fatalf("método de assinatura inesperado: %v", token.Method.Alg())
 					}
@@ -122,7 +118,7 @@ func TestHandleGetJWKS_Table(t *testing.T) {
 					t.Fatalf("JWT inválido: %v", err)
 				}
 
-				payload, err := base64.RawURLEncoding.DecodeString(strings.Split(resp.Body, ".")[1])
+				payload, err := base64.RawURLEncoding.DecodeString(strings.Split(jwks, ".")[1])
 				if err != nil {
 					t.Fatalf("erro ao decodificar payload: %v", err)
 				}
@@ -139,8 +135,4 @@ func TestHandleGetJWKS_Table(t *testing.T) {
 			}
 		})
 	}
-}
-
-func strPtr(s string) *string {
-	return &s
 }

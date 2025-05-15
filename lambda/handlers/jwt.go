@@ -2,27 +2,15 @@ package handlers
 
 import (
 	"context"
+	"github.com/golang-jwt/jwt/v5"
+	"lambda-ca-kms/internal/services/keymanager"
 	"net/http"
-	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/golang-jwt/jwt/v5"
-	"lambda-ca-kms/keymanager"
 )
 
 func HandleSignJWT(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	now := time.Now()
-	claims := jwt.RegisteredClaims{
-		Audience:  []string{"api.exemplo.com"},
-		ExpiresAt: jwt.NewNumericDate(now.Add(24 * time.Hour)),
-		ID:        "1234-5678",
-		IssuedAt:  jwt.NewNumericDate(now),
-		Issuer:    "sso.exemplo.com",
-		NotBefore: jwt.NewNumericDate(now),
-		Subject:   "usuario@exemplo.com",
-	}
-	token := jwt.NewWithClaims(keymanager.GetJWTSigner().SigningMethod(), claims)
-	signed, err := token.SignedString(keymanager.GetJWTSigner().WithContext(ctx))
+	signed, err := keymanager.SignJWT(ctx, jwt.MapClaims{})
 	if err != nil {
 		return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError, Body: "erro ao assinar jwt"}, nil
 	}

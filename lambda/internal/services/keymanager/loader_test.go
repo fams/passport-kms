@@ -35,7 +35,7 @@ func TestNewKeyWrapper(t *testing.T) {
 		UseFrom:   mustParse(t, "2024-01-01T00:00:00Z"),
 		ExpiresAt: mustParse(t, "2025-01-01T00:00:00Z"),
 	}
-	kw := NewKeyWrapper(pub, cfg, entry)
+	kw := NewKeyHolder(pub, cfg, entry)
 
 	tests := []struct {
 		name string
@@ -69,7 +69,7 @@ func TestSigningMethod(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			kw := &KeyWrapper{PubKey: &kms.GetPublicKeyOutput{KeySpec: tt.spec}}
+			kw := &KeyHolder{PubKey: &kms.GetPublicKeyOutput{KeySpec: tt.spec}}
 			got := kw.SigningMethod()
 			if got != tt.want {
 				t.Errorf("esperado %v, obtido %v", tt.want, got)
@@ -83,7 +83,7 @@ func TestKid_HashIsDeterministicAndSafe(t *testing.T) {
 		KeyId:   strPtr("arn:aws:kms:us-east-1:123456789012:key/abcd-1234-efgh-5678"),
 		KeySpec: types.KeySpecRsa2048,
 	}
-	kw := &KeyWrapper{PubKey: pub}
+	kw := &KeyHolder{PubKey: pub}
 	kid := kw.Kid()
 
 	t.Run("Determinismo", func(t *testing.T) {
@@ -167,7 +167,7 @@ func TestLoadKeyGroup_ErrorPath(t *testing.T) {
 	mock := mocks.NewMockKMSClient(ctrl)
 	mock.EXPECT().GetPublicKey(gomock.Any(), gomock.Any()).Return(nil, assertError("falha simulada"))
 
-	target := []*KeyWrapper{}
+	target := []*KeyHolder{}
 	defer func() {
 		if r := recover(); r == nil {
 			t.Error("esperado panic por erro de GetPublicKey")
@@ -179,29 +179,29 @@ func TestLoadKeyGroup_ErrorPath(t *testing.T) {
 
 func TestGetSignerAtAndVisible(t *testing.T) {
 	now := mustParse(t, "2024-06-01T00:00:00Z")
-	entries := []*KeyWrapper{
+	entries := []*KeyHolder{
 		{keyID: "k1", UseFrom: mustParse(t, "2023-01-01T00:00:00Z"), ExpiresAt: mustParse(t, "2023-12-31T00:00:00Z")},
 		{keyID: "k2", UseFrom: mustParse(t, "2024-01-01T00:00:00Z"), ExpiresAt: mustParse(t, "2025-01-01T00:00:00Z")},
 		{keyID: "k3", UseFrom: mustParse(t, "2025-01-01T00:00:00Z"), ExpiresAt: mustParse(t, "2026-01-01T00:00:00Z")},
 	}
-	t.Run("GetSignerAt", func(t *testing.T) {
-		active := GetSignerAt(entries, now)
+	t.Run("getSignerAt", func(t *testing.T) {
+		active := getSignerAt(entries, now)
 		if active == nil || active.keyID != "k2" {
 			t.Errorf("esperado k2, obtido %v", active.keyID)
 		}
 	})
-	t.Run("GetVisibleAt", func(t *testing.T) {
-		visible := GetVisibleAt(entries, now)
+	t.Run("getVisibleAt", func(t *testing.T) {
+		visible := getVisibleAt(entries, now)
 		if len(visible) != 2 || visible[0].keyID != "k2" || visible[1].keyID != "k3" {
 			t.Errorf("esperado visíveis [k2 k3], obtido %v", visible)
 		}
 	})
 	t.Run("Nenhuma ativa ou visível", func(t *testing.T) {
 		past := mustParse(t, "2010-01-01T00:00:00Z")
-		if GetSignerAt(entries, past) != nil {
-			t.Error("esperado nil em GetSignerAt com tempo anterior")
+		if getSignerAt(entries, past) != nil {
+			t.Error("esperado nil em getSignerAt com tempo anterior")
 		}
-		if len(GetVisibleAt(entries, past)) != 3 {
+		if len(getVisibleAt(entries, past)) != 3 {
 			t.Error("esperado todas visíveis se expiradas no futuro")
 		}
 	})
