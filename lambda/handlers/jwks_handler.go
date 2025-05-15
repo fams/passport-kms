@@ -114,9 +114,9 @@ func HandleGetJWKS(ctx context.Context, req events.APIGatewayProxyRequest) (even
 		JWKS:             jwks,
 	}
 
-	token := jwt.NewWithClaims(keymanager.GetJWTSigner().SigningMethod(), customClaims)
+	token := jwt.NewWithClaims(keymanager.GetJWKSSigner().SigningMethod(), customClaims)
 
-	signedJWT, err := token.SignedString(keymanager.GetJWTSigner().WithContext(ctx))
+	signedJWT, err := token.SignedString(keymanager.GetJWKSSigner().WithContext(ctx))
 	if err != nil {
 		return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError, Body: "erro ao assinar JWKS"}, nil
 	}
