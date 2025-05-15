@@ -31,24 +31,3 @@ resource "aws_iam_role" "jose_enc_role" {
   })
 }
 
-
-resource "aws_iam_role_policy" "jose_enc_policy" {
-  count = var.sign_role_arn == "" ? 1 : 0
-  name ="jose_enc-policy-${var.key_alias}"
-  role = aws_iam_role.jose_enc_role[0].id
-
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Effect = "Allow",
-        Action = [
-          "kms:Encrypt",
-          "kms:Decrypt",
-          "kms:GetPublicKey"
-        ],
-        Resource = "*"
-      }
-    ]
-  })
-}

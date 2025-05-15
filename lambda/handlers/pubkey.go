@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/config"
 	awskms "github.com/aws/aws-sdk-go-v2/service/kms"
-	"lambda-ca-kms/kms"
+	kConfig "lambda-ca-kms/kms"
 )
 
 func HandleGetPublicKey(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -19,7 +19,7 @@ func HandleGetPublicKey(ctx context.Context, req events.APIGatewayProxyRequest) 
 
 	client := awskms.NewFromConfig(awsCfg)
 	out, err := client.GetPublicKey(ctx, &awskms.GetPublicKeyInput{
-		KeyId: &kms.JWKSKeyID,
+		KeyId: &kConfig.JWKSKeyID,
 	})
 	if err != nil {
 		return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError, Body: "erro ao obter chave pública"}, nil

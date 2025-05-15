@@ -6,9 +6,18 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"io"
 	"lambda-ca-kms/handlers"
+	"lambda-ca-kms/kms"
 	"log"
 	"net/http"
+	"os"
 )
+
+func init() {
+	kms.JWTKeyID = os.Getenv("KMS_KEY_JWT")
+	kms.JOSEKeyID = os.Getenv("KMS_KEY_JOSE")
+	kms.JWKSKeyID = os.Getenv("KMS_KEY_JWKS")
+	kms.InitKMS()
+}
 
 func main() {
 	http.HandleFunc("/sign-csr", func(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +38,11 @@ func main() {
 		w.WriteHeader(resp.StatusCode)
 		fmt.Fprint(w, resp.Body)
 	})
-
+	http.HandleFunc("/jwks-signed", func(w http.ResponseWriter, r *http.Request) {
+		resp, _ := handlers.HandleGetJWKS(context.Background(), wrapRequest(""))
+		w.WriteHeader(resp.StatusCode)
+		fmt.Fprint(w, resp.Body)
+	})
 	log.Println("Servidor local ouvindo em http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
