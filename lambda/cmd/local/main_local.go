@@ -6,17 +6,17 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"io"
 	"lambda-ca-kms/handlers"
-	"lambda-ca-kms/kms"
+	"lambda-ca-kms/keymanager"
 	"log"
 	"net/http"
 	"os"
 )
 
 func init() {
-	kms.JWTKeyID = os.Getenv("KMS_KEY_JWT")
-	kms.JOSEKeyID = os.Getenv("KMS_KEY_JOSE")
-	kms.JWKSKeyID = os.Getenv("KMS_KEY_JWKS")
-	kms.InitKMS()
+	keymanager.JWTKeyID = os.Getenv("KMS_KEY_JWT")
+	keymanager.JOSEKeyID = os.Getenv("KMS_KEY_JOSE")
+	keymanager.JWKSKeyID = os.Getenv("KMS_KEY_JWKS")
+	keymanager.InitKMS()
 }
 
 func main() {

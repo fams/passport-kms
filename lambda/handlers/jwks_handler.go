@@ -13,7 +13,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/golang-jwt/jwt/v5"
-	"lambda-ca-kms/kms"
+	"lambda-ca-kms/keymanager"
 )
 
 type JWK struct {
@@ -46,11 +46,11 @@ func HandleGetJWKS(ctx context.Context, req events.APIGatewayProxyRequest) (even
 	var keys []JWK
 
 	for _, pair := range []struct {
-		key *kms.KeyWrapper
+		key *keymanager.KeyWrapper
 		use string
 	}{
-		{kms.JWTSigner, "sig"},
-		{kms.JOSESigner, "enc"},
+		{keymanager.GetJWTSigner(), "sig"},
+		{keymanager.GetJOSESigner(), "enc"},
 	} {
 		pub, err := x509.ParsePKIXPublicKey(pair.key.PubKey.PublicKey)
 		if err != nil {
@@ -114,9 +114,9 @@ func HandleGetJWKS(ctx context.Context, req events.APIGatewayProxyRequest) (even
 		JWKS:             jwks,
 	}
 
-	token := jwt.NewWithClaims(kms.JWKSSigner.SigningMethod(), customClaims)
+	token := jwt.NewWithClaims(keymanager.GetJWTSigner().SigningMethod(), customClaims)
 
-	signedJWT, err := token.SignedString(kms.JWKSSigner.WithContext(ctx))
+	signedJWT, err := token.SignedString(keymanager.GetJWTSigner().WithContext(ctx))
 	if err != nil {
 		return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError, Body: "erro ao assinar JWKS"}, nil
 	}

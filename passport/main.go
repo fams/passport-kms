@@ -26,7 +26,7 @@ func main() {
 
 	issuer, err := securejwt.NewTokenIssuer(securejwt.TokenIssuerConfig{
 		Issuer:        "https://auth.my-service.com",
-		KMSKeyID:      "arn:aws:kms:us-east-1:696300981483:alias/jwt-signing",
+		KMSKeyID:      "arn:aws:keymanager:us-east-1:696300981483:alias/jwt-signing",
 		TokenLifetime: 5 * time.Minute,
 		ClockSkew:     30 * time.Second,
 		Destinations:  resolver, // <- passa o resolver, não os destinos diretamente
