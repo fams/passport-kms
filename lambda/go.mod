@@ -6,9 +6,9 @@ go 1.23
 //require (
 //    github.com/aws/aws-lambda-go v1.43.0
 //    github.com/aws/aws-sdk-go-v2/config v1.33.0
-//    github.com/aws/aws-sdk-go-v2/service/kms v1.38.3
+//    github.com/aws/aws-sdk-go-v2/service/keymanager v1.38.3
 //    github.com/golang-jwt/jwt/v5 v5.1.0
-//    github.com/matelang/jwt-go-aws-kms/v2 v2.1.3
+//    github.com/matelang/jwt-go-aws-keymanager/v2 v2.1.3
 //)
 
 require (
@@ -17,6 +17,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/kms v1.38.3
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/matelang/jwt-go-aws-kms/v2 v2.0.0-20250429062419-9fdd079de814
+	go.uber.org/mock v0.5.2
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

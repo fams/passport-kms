@@ -36,7 +36,7 @@ resource "aws_iam_role" "jwt_signing_role" {
 
 # resource "aws_iam_role_policy" "jwt_signing_policy" {
 #   count = var.sign_role_arn == "" ? 1 : 0
-#   name ="kms-signing-policy-${var.key_alias}"
+#   name ="keymanager-signing-policy-${var.key_alias}"
 #   role = aws_iam_role.jwt_signing_role[0].id
 #
 #   policy = jsonencode({
@@ -45,8 +45,8 @@ resource "aws_iam_role" "jwt_signing_role" {
 #       {
 #         Effect = "Allow",
 #         Action = [
-#           "kms:Sign",
-#           "kms:GetPublicKey"
+#           "keymanager:Sign",
+#           "keymanager:GetPublicKey"
 #         ],
 #         Resource = "*"
 #       }

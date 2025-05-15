@@ -7,7 +7,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/golang-jwt/jwt/v5"
-	"lambda-ca-kms/kms"
+	"lambda-ca-kms/keymanager"
 )
 
 func HandleSignJWT(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -21,8 +21,8 @@ func HandleSignJWT(ctx context.Context, req events.APIGatewayProxyRequest) (even
 		NotBefore: jwt.NewNumericDate(now),
 		Subject:   "usuario@exemplo.com",
 	}
-	token := jwt.NewWithClaims(kms.JWTSigner.SigningMethod(), claims)
-	signed, err := token.SignedString(kms.JWTSigner.WithContext(ctx))
+	token := jwt.NewWithClaims(keymanager.GetJWTSigner().SigningMethod(), claims)
+	signed, err := token.SignedString(keymanager.GetJWTSigner().WithContext(ctx))
 	if err != nil {
 		return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError, Body: "erro ao assinar jwt"}, nil
 	}
