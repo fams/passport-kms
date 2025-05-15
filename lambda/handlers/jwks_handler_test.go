@@ -82,7 +82,7 @@ func TestHandleGetJWKS_Table(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			entry := keymanager.KeyEntry{
+			entry := handlers.KeyEntry{
 				KeyID:     tt.name,
 				UseFrom:   time.Now().Add(-1 * time.Hour),
 				ExpiresAt: time.Now().Add(6 * time.Hour),
@@ -102,9 +102,9 @@ func TestHandleGetJWKS_Table(t *testing.T) {
 			}
 
 			kw := keymanager.NewKeyHolder(pub, cfg, entry)
-			keymanager.JWTKeys = []*keymanager.KeyHolder{kw}
-			keymanager.JOSEKeys = []*keymanager.KeyHolder{kw}
-			keymanager.JWKSKeys = []*keymanager.KeyHolder{kw}
+			handlers.JWTKeys = []*keymanager.KeyHolder{kw}
+			handlers.JOSEKeys = []*keymanager.KeyHolder{kw}
+			handlers.JWKSKeys = []*keymanager.KeyHolder{kw}
 
 			resp, _ := handlers.HandleGetJWKS(context.Background(), events.APIGatewayProxyRequest{})
 			if resp.StatusCode != tt.expect {

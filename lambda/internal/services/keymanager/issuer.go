@@ -14,8 +14,8 @@ type issuerConfig struct {
 
 func buildIssuerConfig(signKeys []*KeyHolder, joseKey *KeyHolder) ([]byte, error) {
 	dks := make(kidMap, len(signKeys))
-	for i, v := range JWKSKeys {
-		dks[v.Kid()] = JWKSKeys[i].KeyId()
+	for i, v := range signKeys {
+		dks[v.Kid()] = signKeys[i].KeyId()
 	}
 
 	conf := &issuerConfig{

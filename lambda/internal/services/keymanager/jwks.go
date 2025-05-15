@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
+
 	"math/big"
 	"time"
 
@@ -37,10 +38,19 @@ type JWKS struct {
 	Keys []JWK `json:"keys"`
 }
 
+func NewJWKSEntry(key *KeyHolder, use string) *JWKSEntry {
+	return &JWKSEntry{key, use}
+}
+
 type JWKSEntry struct {
 	key *KeyHolder
 	use string
 }
+
+func NewJWKSConfig(issuer string, expireInHours int, skewTimeInSeconds int) *JWKSConfig {
+	return &JWKSConfig{issuer, expireInHours, skewTimeInSeconds}
+}
+
 type JWKSConfig struct {
 	issuer            string
 	expireInHours     int
@@ -55,19 +65,8 @@ func base64urlInt(i int) string {
 	buf := big.NewInt(int64(i)).Bytes()
 	return base64.RawURLEncoding.EncodeToString(buf)
 }
-func GetJWKS(ctx context.Context) (string, error) {
-	entries := []JWKSEntry{
-		{GetJWTSigner(), "sig"},
-		{GetJOSESigner(), "enc"},
-	}
-	return buildJWKS(ctx, entries, JWKSConfig{
-		issuer:            "jwks.ca.internal",
-		expireInHours:     24,
-		skewTimeInSeconds: 300,
-	})
-}
 
-func buildJWKS(ctx context.Context, entries []JWKSEntry, config JWKSConfig) (string, error) {
+func BuildJWKS(ctx context.Context, entries []*JWKSEntry, config *JWKSConfig, jwksSigner *KeyHolder) (string, error) {
 	var keys []JWK
 
 	for _, pair := range entries {
@@ -132,9 +131,9 @@ func buildJWKS(ctx context.Context, entries []JWKSEntry, config JWKSConfig) (str
 		JWKS:             jwks,
 	}
 
-	token := jwt.NewWithClaims(GetJWKSSigner().SigningMethod(), customClaims)
+	token := jwt.NewWithClaims(jwksSigner.SigningMethod(), customClaims)
 
-	signedJWT, err := token.SignedString(GetJWKSSigner().WithContext(ctx))
+	signedJWT, err := token.SignedString(jwksSigner.WithContext(ctx))
 	if err != nil {
 		return "", errors.Join(ErrCouldNotSignKey, err)
 	}

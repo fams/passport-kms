@@ -2,9 +2,12 @@ package keymanager
 
 import (
 	"context"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/base64"
@@ -40,6 +43,45 @@ func generateFakeECDSAKey(t *testing.T) ([]byte, *ecdsa.PrivateKey) {
 	return der, priv
 }
 
+func generateFakeRSAKey(t *testing.T) ([]byte, *rsa.PrivateKey) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("erro ao gerar chave RSA: %v", err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	if err != nil {
+		t.Fatalf("erro ao serializar chave pública: %v", err)
+	}
+	return der, priv
+}
+func defSignFunction(realPriv crypto.PrivateKey) func(ctx context.Context, input *kms.SignInput, optFns ...func(*kms.Options)) (*kms.SignOutput, error) {
+	return func(ctx context.Context, input *kms.SignInput, optFns ...func(*kms.Options)) (*kms.SignOutput, error) {
+		var sig []byte
+
+		switch realPriv.(type) {
+		case *ecdsa.PrivateKey:
+			r, s, err := ecdsa.Sign(rand.Reader, realPriv.(*ecdsa.PrivateKey), input.Message)
+			if err != nil {
+				return nil, err
+			}
+			sig, err = asn1.Marshal(struct{ R, S *big.Int }{r, s})
+			if err != nil {
+				return nil, err
+			}
+		case *rsa.PrivateKey:
+			hashed := sha256.Sum256(input.Message)
+			// Assina com PSS
+			var err error
+			sig, err = rsa.SignPSS(rand.Reader, realPriv.(*rsa.PrivateKey), crypto.SHA256, hashed[:], &rsa.PSSOptions{
+				SaltLength: rsa.PSSSaltLengthAuto, // ou PSSSaltLengthEqualsHash
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
+		return &kms.SignOutput{Signature: sig}, nil
+	}
+}
 func TestHandleGetJWKS_Table(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -47,18 +89,7 @@ func TestHandleGetJWKS_Table(t *testing.T) {
 	realKeyDER, realPriv := generateFakeECDSAKey(t)
 
 	mockKMS := mocks.NewMockKMSClient(ctrl)
-	mockKMS.EXPECT().Sign(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
-		func(ctx context.Context, input *kms.SignInput, optFns ...func(*kms.Options)) (*kms.SignOutput, error) {
-			r, s, err := ecdsa.Sign(rand.Reader, realPriv, input.Message)
-			if err != nil {
-				return nil, err
-			}
-			sig, err := asn1.Marshal(struct{ R, S *big.Int }{r, s})
-			if err != nil {
-				return nil, err
-			}
-			return &kms.SignOutput{Signature: sig}, nil
-		})
+	mockKMS.EXPECT().Sign(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn()
 
 	pubKey := &realPriv.PublicKey
 
@@ -69,13 +100,27 @@ func TestHandleGetJWKS_Table(t *testing.T) {
 		expect  error
 		useMock bool
 	}{
-		{"success", realKeyDER, types.KeySpecEccNistP256, nil, true},
-		{"invalid key data", []byte("invalid"), types.KeySpecEccNistP256, ErrInvalidKey, false},
-		{"unsupported key type", func() []byte {
-			type unsupportedKey struct{}
-			b, _ := x509.MarshalPKIXPublicKey(&unsupportedKey{})
-			return b
-		}(), types.KeySpecEccNistP256, ErrInvalidKey, false},
+		{
+			name:    "success",
+			keyData: realKeyDER,
+			spec:    types.KeySpecEccNistP256,
+			useMock: true,
+		},
+		{
+			name:    "invalid key data",
+			keyData: []byte("invalid"),
+			spec:    types.KeySpecEccNistP256,
+			expect:  ErrInvalidKey,
+		},
+		{
+			name: "unsupported key type",
+			keyData: func() []byte {
+				type unsupportedKey struct{}
+				b, _ := x509.MarshalPKIXPublicKey(&unsupportedKey{})
+				return b
+			}(),
+			spec:   types.KeySpecEccNistP256,
+			expect: ErrInvalidKey},
 	}
 
 	for _, tt := range tests {
@@ -100,11 +145,15 @@ func TestHandleGetJWKS_Table(t *testing.T) {
 			}
 
 			kw := NewKeyHolder(pub, cfg, entry)
-			JWTKeys = []*KeyHolder{kw}
-			JOSEKeys = []*KeyHolder{kw}
-			JWKSKeys = []*KeyHolder{kw}
+			entries := []*JWKSEntry{
+				NewJWKSEntry(kw, "sig"),
+				NewJWKSEntry(kw, "enc"),
+			}
 
-			jwks, err := GetJWKS(context.Background())
+			jwks, err := BuildJWKS(context.Background(), entries, NewJWKSConfig(
+				"jwks.ca.internal",
+				24,
+				300), kw)
 			assert.ErrorIs(t, err, tt.expect)
 
 			if err == nil {

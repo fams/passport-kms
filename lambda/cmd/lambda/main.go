@@ -5,12 +5,11 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"lambda-ca-kms/handlers"
-	"lambda-ca-kms/internal/services/keymanager"
 	"net/http"
 )
 
 func init() {
-	keymanager.InitKMS()
+	handlers.InitKMS()
 }
 func main() {
 	lambda.Start(func(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
