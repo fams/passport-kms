@@ -80,9 +80,9 @@ func loadKeyGroup(ctx context.Context, client jwtkms.KMSClient, entries []keyman
 }
 
 // Alias para uso direto
-func GetJWTSigner() *keymanager.KeyHolder  { return keymanager.GetSignerAt(JWTKeys, time.Now()) }
-func GetJOSESigner() *keymanager.KeyHolder { return keymanager.GetSignerAt(JOSEKeys, time.Now()) }
-func GetJWKSSigner() *keymanager.KeyHolder { return keymanager.GetSignerAt(JWKSKeys, time.Now()) }
+func GetJWTSigner() *keymanager.KeyHolder  { return keymanager.GetActiveKey(JWTKeys, time.Now()) }
+func GetJOSESigner() *keymanager.KeyHolder { return keymanager.GetActiveKey(JOSEKeys, time.Now()) }
+func GetJWKSSigner() *keymanager.KeyHolder { return keymanager.GetActiveKey(JWKSKeys, time.Now()) }
 
 func GetJWTKeysForJWKS() []*keymanager.KeyHolder { return keymanager.GetVisibleAt(JWTKeys, time.Now()) }
 func GetJOSEKeysForJWKS() []*keymanager.KeyHolder {
@@ -97,10 +97,10 @@ func GetJWKS(ctx context.Context) (string, error) {
 		keymanager.NewJWKSEntry(GetJWTSigner(), "sig"),
 		keymanager.NewJWKSEntry(GetJOSESigner(), "enc"),
 	}
-	return keymanager.BuildJWKS(ctx, entries, keymanager.NewJWKSConfig(
+	return keymanager.BuildJWKS(entries, keymanager.NewJWKSConfig(
 		"jwks.ca.internal",
 		24,
-		300), GetJWTSigner())
+		300), GetJWTSigner().SigningMethod(), GetJWKSSigner().WithContext(ctx))
 }
 
 func GetPublicKey() ([]byte, error) {

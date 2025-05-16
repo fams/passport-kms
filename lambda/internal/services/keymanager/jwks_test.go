@@ -1,187 +1,145 @@
 package keymanager
 
 import (
-	"context"
-	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/x509"
-	"encoding/asn1"
-	"encoding/base64"
-	"encoding/json"
-	"github.com/stretchr/testify/assert"
-	"math/big"
-	"strings"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
+	"github.com/golang-jwt/jwt/v5"
 	"testing"
 	"time"
-
-	"github.com/aws/aws-sdk-go-v2/service/kms"
-	"github.com/aws/aws-sdk-go-v2/service/kms/types"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/matelang/jwt-go-aws-kms/v2/jwtkms"
-	"go.uber.org/mock/gomock"
-	"lambda-ca-kms/mocks"
 )
 
-type JWKSClaims struct {
-	Iss  string      `json:"iss"`
-	JWKS interface{} `json:"jwks"`
-}
+func TestBuildJWKSet(t *testing.T) {
+	// Gerar chave RSA
+	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+	rsaDER, _ := x509.MarshalPKIXPublicKey(&rsaKey.PublicKey)
 
-func generateFakeECDSAKey(t *testing.T) ([]byte, *ecdsa.PrivateKey) {
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("erro ao gerar chave ECDSA: %v", err)
+	// Gerar chave EC P-256
+	ecKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	ecDER, _ := x509.MarshalPKIXPublicKey(&ecKey.PublicKey)
+
+	type args struct {
+		pubBytes []byte
+		use      string
+		kty      string
+		keyId    string
 	}
-	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
-	if err != nil {
-		t.Fatalf("erro ao serializar chave pública: %v", err)
-	}
-	return der, priv
-}
-
-func generateFakeRSAKey(t *testing.T) ([]byte, *rsa.PrivateKey) {
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("erro ao gerar chave RSA: %v", err)
-	}
-	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
-	if err != nil {
-		t.Fatalf("erro ao serializar chave pública: %v", err)
-	}
-	return der, priv
-}
-func defSignFunction(realPriv crypto.PrivateKey) func(ctx context.Context, input *kms.SignInput, optFns ...func(*kms.Options)) (*kms.SignOutput, error) {
-	return func(ctx context.Context, input *kms.SignInput, optFns ...func(*kms.Options)) (*kms.SignOutput, error) {
-		var sig []byte
-
-		switch realPriv.(type) {
-		case *ecdsa.PrivateKey:
-			r, s, err := ecdsa.Sign(rand.Reader, realPriv.(*ecdsa.PrivateKey), input.Message)
-			if err != nil {
-				return nil, err
-			}
-			sig, err = asn1.Marshal(struct{ R, S *big.Int }{r, s})
-			if err != nil {
-				return nil, err
-			}
-		case *rsa.PrivateKey:
-			hashed := sha256.Sum256(input.Message)
-			// Assina com PSS
-			var err error
-			sig, err = rsa.SignPSS(rand.Reader, realPriv.(*rsa.PrivateKey), crypto.SHA256, hashed[:], &rsa.PSSOptions{
-				SaltLength: rsa.PSSSaltLengthAuto, // ou PSSSaltLengthEqualsHash
-			})
-			if err != nil {
-				return nil, err
-			}
-		}
-		return &kms.SignOutput{Signature: sig}, nil
-	}
-}
-func TestHandleGetJWKS_Table(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	realKeyDER, realPriv := generateFakeECDSAKey(t)
-
-	mockKMS := mocks.NewMockKMSClient(ctrl)
-	mockKMS.EXPECT().Sign(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn()
-
-	pubKey := &realPriv.PublicKey
 
 	tests := []struct {
-		name    string
-		keyData []byte
-		spec    types.KeySpec
-		expect  error
-		useMock bool
+		name      string
+		args      args
+		wantError bool
 	}{
 		{
-			name:    "success",
-			keyData: realKeyDER,
-			spec:    types.KeySpecEccNistP256,
-			useMock: true,
+			name: "Chave RSA válida",
+			args: args{
+				pubBytes: rsaDER,
+				use:      "sig",
+				kty:      "RSA",
+				keyId:    "aws::kms:/alias/rsa_1_Ok",
+			},
+			wantError: false,
 		},
 		{
-			name:    "invalid key data",
-			keyData: []byte("invalid"),
-			spec:    types.KeySpecEccNistP256,
-			expect:  ErrInvalidKey,
+			name: "Chave EC P-256 válida",
+			args: args{
+				pubBytes: ecDER,
+				use:      "enc",
+				kty:      "EC",
+				keyId:    "aws::kms:/alias/ecdsa_1_Ok",
+			},
+			wantError: false,
 		},
 		{
-			name: "unsupported key type",
-			keyData: func() []byte {
-				type unsupportedKey struct{}
-				b, _ := x509.MarshalPKIXPublicKey(&unsupportedKey{})
-				return b
-			}(),
-			spec:   types.KeySpecEccNistP256,
-			expect: ErrInvalidKey},
+			name: "Chave inválida (dados corrompidos)",
+			args: args{
+				pubBytes: []byte("INVALID DATA"),
+				use:      "sig",
+				keyId:    "aws::kms:/alias/bad",
+			},
+			wantError: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			entry := KeyEntry{
-				KeyID:     tt.name,
-				UseFrom:   time.Now().Add(-1 * time.Hour),
-				ExpiresAt: time.Now().Add(6 * time.Hour),
+			holder := &KeyHolder{
+				PubKey: &kms.GetPublicKeyOutput{PublicKey: tt.args.pubBytes, KeyId: &tt.args.keyId},
+				keyID:  tt.args.keyId,
+			}
+			entry := &JWKSEntry{
+				key: holder,
+				use: tt.args.use,
 			}
 
-			pub := &kms.GetPublicKeyOutput{
-				KeyId:     strPtr(entry.KeyID),
-				KeySpec:   tt.spec,
-				PublicKey: tt.keyData,
+			jwks, err := BuildJWKSet([]*JWKSEntry{entry})
+			if (err != nil) != tt.wantError {
+				t.Fatalf("esperado erro=%v, obtido err=%v", tt.wantError, err)
 			}
 
-			var cfg *jwtkms.Config
-			if tt.useMock {
-				cfg = jwtkms.NewKMSConfig(mockKMS, entry.KeyID, false)
-			} else {
-				cfg = jwtkms.NewKMSConfig(nil, entry.KeyID, false)
-			}
-
-			kw := NewKeyHolder(pub, cfg, entry)
-			entries := []*JWKSEntry{
-				NewJWKSEntry(kw, "sig"),
-				NewJWKSEntry(kw, "enc"),
-			}
-
-			jwks, err := BuildJWKS(context.Background(), entries, NewJWKSConfig(
-				"jwks.ca.internal",
-				24,
-				300), kw)
-			assert.ErrorIs(t, err, tt.expect)
-
-			if err == nil {
-				parsed, err := jwt.Parse(jwks, func(token *jwt.Token) (interface{}, error) {
-					if token.Method.Alg() != jwt.SigningMethodES256.Alg() {
-						t.Fatalf("método de assinatura inesperado: %v", token.Method.Alg())
-					}
-					return pubKey, nil
-				})
-				if err != nil || !parsed.Valid {
-					t.Fatalf("JWT inválido: %v", err)
-				}
-
-				payload, err := base64.RawURLEncoding.DecodeString(strings.Split(jwks, ".")[1])
-				if err != nil {
-					t.Fatalf("erro ao decodificar payload: %v", err)
-				}
-				var out JWKSClaims
-				if err := json.Unmarshal(payload, &out); err != nil {
-					t.Fatalf("payload inválido: %v", err)
-				}
-				if out.Iss != "jwks.ca.internal" {
-					t.Errorf("issuer inesperado: %s", out.Iss)
-				}
-				if out.JWKS == nil {
-					t.Error("jwks não encontrado no payload")
-				}
+			if err == nil && jwks.Keys[0].Kty != tt.args.kty {
+				t.Errorf("esperado tipo %s, obtido %s", tt.args.kty, jwks.Keys[0].Kty)
 			}
 		})
+	}
+}
+
+func TestBuildJWKS_UsandoECDSA(t *testing.T) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("erro ao gerar chave EC: %v", err)
+	}
+
+	// Serializar a chave pública em DER
+	pubDER, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	if err != nil {
+		t.Fatalf("erro ao serializar chave pública: %v", err)
+	}
+
+	// Criar um JWKSEntry com essa chave
+	keyID := "arn:aws:kms:us-east-1:xxxxx:alias/passport-signer"
+	holder := &KeyHolder{
+		PubKey:    &kms.GetPublicKeyOutput{PublicKey: pubDER, KeyId: &keyID},
+		UseFrom:   time.Now().Add(-1 * time.Hour),
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+
+	entry := &JWKSEntry{
+		key: holder,
+		use: "sig",
+	}
+
+	cfg := &JWKSConfig{
+		issuer:            "https://test.issuer",
+		expireInHours:     6,
+		skewTimeInSeconds: 0,
+	}
+
+	tokenStr, err := BuildJWKS([]*JWKSEntry{entry}, cfg, jwt.SigningMethodES256, priv)
+	if err != nil {
+		t.Fatalf("erro ao gerar token JWKS: %v", err)
+	}
+
+	// Decodificar o JWT (sem validar assinatura) e checar claims
+	parser := jwt.NewParser()
+	var claims struct {
+		JWKS JWKS `json:"jwks"`
+		jwt.RegisteredClaims
+	}
+	_, err = parser.ParseWithClaims(tokenStr, &claims, func(t *jwt.Token) (interface{}, error) {
+		return &priv.PublicKey, nil
+	})
+	if err != nil {
+		t.Fatalf("erro ao parsear token: %v", err)
+	}
+
+	if len(claims.JWKS.Keys) == 0 {
+		t.Fatal("JWKS vazio no token")
+	}
+	if claims.JWKS.Keys[0].Kid == "" || claims.JWKS.Keys[0].Alg == "" {
+		t.Errorf("JWKS com campos ausentes: %+v", claims.JWKS.Keys[0])
 	}
 }
