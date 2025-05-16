@@ -12,8 +12,8 @@ func TestGetSignerAtAndVisible(t *testing.T) {
 		{keyID: "k2", UseFrom: mustParse(t, "2024-01-01T00:00:00Z"), ExpiresAt: mustParse(t, "2025-01-01T00:00:00Z")},
 		{keyID: "k3", UseFrom: mustParse(t, "2025-01-01T00:00:00Z"), ExpiresAt: mustParse(t, "2026-01-01T00:00:00Z")},
 	}
-	t.Run("GetSignerAt", func(t *testing.T) {
-		active := GetSignerAt(entries, now)
+	t.Run("GetActiveKey", func(t *testing.T) {
+		active := GetActiveKey(entries, now)
 		if active == nil || active.keyID != "k2" {
 			t.Errorf("esperado k2, obtido %v", active.keyID)
 		}
@@ -26,8 +26,8 @@ func TestGetSignerAtAndVisible(t *testing.T) {
 	})
 	t.Run("Nenhuma ativa ou visível", func(t *testing.T) {
 		past := mustParse(t, "2010-01-01T00:00:00Z")
-		if GetSignerAt(entries, past) != nil {
-			t.Error("esperado nil em GetSignerAt com tempo anterior")
+		if GetActiveKey(entries, past) != nil {
+			t.Error("esperado nil em GetActiveKey com tempo anterior")
 		}
 		if len(GetVisibleAt(entries, past)) != 3 {
 			t.Error("esperado todas visíveis se expiradas no futuro")
