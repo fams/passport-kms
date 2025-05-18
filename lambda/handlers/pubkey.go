@@ -7,9 +7,9 @@ import (
 )
 
 func HandleGetPublicKey(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	pemBlock, err := GetPublicKey()
+	key, err := manager.JWKSPublicKey(ctx)
 	if err != nil {
 		return events.APIGatewayProxyResponse{StatusCode: http.StatusInternalServerError, Body: err.Error()}, nil
 	}
-	return events.APIGatewayProxyResponse{StatusCode: http.StatusOK, Body: string(pemBlock)}, nil
+	return events.APIGatewayProxyResponse{StatusCode: http.StatusOK, Body: string(key)}, nil
 }
